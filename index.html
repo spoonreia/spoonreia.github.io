@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-ag">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Metrónomo de Canciones</title>
     <style>
@@ -35,7 +35,7 @@
             list-style: none;
             padding: 0;
             margin-bottom: 20px;
-            max-height: 200px;
+            max-height: 250px; /* Aumentado para más espacio */
             overflow-y: auto;
         }
 
@@ -45,8 +45,14 @@
             align-items: center;
             padding: 12px;
             border-bottom: 1px solid #ddd;
-            cursor: pointer;
             transition: background-color 0.2s;
+        }
+        
+        .song-info {
+            flex-grow: 1;
+            cursor: pointer;
+            display: flex; /* Para alinear nombre y bpm */
+            justify-content: space-between;
         }
 
         #song-list li:hover {
@@ -65,7 +71,22 @@
         .song-bpm {
             font-weight: 500;
             color: #606770;
+            padding-left: 10px; /* Espacio entre nombre y BPM */
         }
+        
+        /* --- NUEVOS ESTILOS PARA LOS BOTONES --- */
+        .song-actions button {
+            border: none;
+            background-color: transparent;
+            cursor: pointer;
+            padding: 5px;
+            font-size: 16px;
+            margin-left: 8px;
+        }
+
+        .edit-btn { color: #1877f2; }
+        .delete-btn { color: #fa383e; }
+        /* --- FIN DE NUEVOS ESTILOS --- */
 
         .metronome {
             text-align: center;
@@ -166,23 +187,69 @@
             let metronomeInterval = null;
             let audioContext;
             let currentBeat = 0;
+			
+			const updateMediaSession = () => {
+                if ('mediaSession' in navigator && currentBpm) {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: `Metrónomo a ${currentBpm} BPM`,
+                        artist: 'Mi App de Metrónomo',
+                        album: 'Práctica Musical',
+                        artwork: [
+                            { src: 'https://dummyimage.com/96x96/1877f2/ffffff.png&text=🎵', sizes: '96x96', type: 'image/png' },
+                        ]
+                    });
 
+                    navigator.mediaSession.setActionHandler('play', toggleMetronome);
+                    navigator.mediaSession.setActionHandler('pause', toggleMetronome);
+                }
+            };
+			
             const saveSongs = () => {
                 localStorage.setItem('songs', JSON.stringify(songs));
             };
 
+            // --- FUNCIÓN RENDERSONGS MODIFICADA ---
             const renderSongs = () => {
                 songList.innerHTML = '';
                 songs.forEach((song, index) => {
                     const li = document.createElement('li');
-                    li.dataset.bpm = song.bpm;
-                    li.innerHTML = `<span class="song-name">${song.name}</span><span class="song-bpm">${song.bpm} BPM</span>`;
-                    li.addEventListener('click', () => {
+                    
+                    // Contenedor para la información (clicable para seleccionar)
+                    const songInfo = document.createElement('div');
+                    songInfo.className = 'song-info';
+                    songInfo.innerHTML = `<span class="song-name">${song.name}</span><span class="song-bpm">${song.bpm} BPM</span>`;
+                    
+                    songInfo.addEventListener('click', () => {
                         currentBpm = song.bpm;
                         bpmDisplay.textContent = `${currentBpm} BPM`;
                         document.querySelectorAll('#song-list li').forEach(item => item.classList.remove('active'));
                         li.classList.add('active');
+                        updateMediaSession();
                     });
+
+                    // Contenedor para los botones de acción
+                    const songActions = document.createElement('div');
+                    songActions.className = 'song-actions';
+
+                    // Botón de Editar
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'edit-btn';
+                    editBtn.innerHTML = '✏️';
+                    editBtn.title = 'Editar canción';
+                    editBtn.addEventListener('click', () => editSong(index));
+                    
+                    // Botón de Eliminar
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'delete-btn';
+                    deleteBtn.innerHTML = '🗑️';
+                    deleteBtn.title = 'Eliminar canción';
+                    deleteBtn.addEventListener('click', () => deleteSong(index));
+
+                    songActions.appendChild(editBtn);
+                    songActions.appendChild(deleteBtn);
+                    
+                    li.appendChild(songInfo);
+                    li.appendChild(songActions);
                     songList.appendChild(li);
                 });
             };
@@ -192,6 +259,36 @@
                 saveSongs();
                 renderSongs();
             };
+
+            // --- NUEVAS FUNCIONES PARA EDITAR Y BORRAR ---
+            const editSong = (index) => {
+                const song = songs[index];
+                const newName = prompt('Edita el nombre de la canción:', song.name);
+                if (newName === null || newName.trim() === '') return;
+
+                const newBpmInput = prompt('Edita los BPM de la canción:', song.bpm);
+                if (newBpmInput === null) return; 
+
+                const newBpm = parseInt(newBpmInput, 10);
+                if (isNaN(newBpm) || newBpm <= 0) {
+                    alert("Por favor, ingresa un número de BPM válido.");
+                    return;
+                }
+
+                songs[index] = { name: newName.trim(), bpm: newBpm };
+                saveSongs();
+                renderSongs();
+            };
+
+            const deleteSong = (index) => {
+                const song = songs[index];
+                if (confirm(`¿Estás seguro de que quieres eliminar "${song.name}"?`)) {
+                    songs.splice(index, 1);
+                    saveSongs();
+                    renderSongs();
+                }
+            };
+            // --- FIN DE NUEVAS FUNCIONES ---
 
             const createAudioContext = () => {
                 if (!audioContext) {
@@ -207,12 +304,11 @@
                 oscillator.connect(gainNode);
                 gainNode.connect(audioContext.destination);
                 
-                // Beat 1 es más fuerte
                 if (currentBeat % 4 === 0) {
-                    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // Tono más alto para el primer beat
+                    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
                     gainNode.gain.setValueAtTime(1, audioContext.currentTime);
                 } else {
-                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // Tono más bajo para los otros beats
+                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
                     gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
                 }
 
@@ -229,15 +325,14 @@
                 }
                 
                 createAudioContext();
-
                 isMetronomePlaying = !isMetronomePlaying;
 
                 if (isMetronomePlaying) {
-                    currentBeat = 0; // Resetear el conteo de beats
+                    currentBeat = 0;
                     const interval = (60 / currentBpm) * 1000;
                     metronomeInterval = setInterval(playClick, interval);
                     toggleMetronomeBtn.textContent = 'Detener Metrónomo';
-                    playClick(); // Iniciar inmediatamente
+                    playClick();
                 } else {
                     clearInterval(metronomeInterval);
                     toggleMetronomeBtn.textContent = 'Iniciar Metrónomo';
@@ -260,7 +355,6 @@
 
             toggleMetronomeBtn.addEventListener('click', toggleMetronome);
 
-            // Carga inicial
             renderSongs();
         });
     </script>

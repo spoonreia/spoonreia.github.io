@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-ag">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metrónomo de Canciones</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #1c1e21;
+            margin-bottom: 20px;
+        }
+
+        #song-list {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #song-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #song-list li:hover {
+            background-color: #f5f5f5;
+        }
+
+        #song-list li.active {
+            background-color: #e7f3ff;
+            font-weight: bold;
+        }
+
+        .song-name {
+            flex-grow: 1;
+        }
+
+        .song-bpm {
+            font-weight: 500;
+            color: #606770;
+        }
+
+        .metronome {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        #toggle-metronome {
+            padding: 12px 25px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #1877f2;
+            color: white;
+            transition: background-color 0.2s;
+        }
+
+        #toggle-metronome:hover {
+            background-color: #166fe5;
+        }
+
+        #bpm-display {
+            font-size: 24px;
+            font-weight: 600;
+            margin-top: 10px;
+            color: #1c1e21;
+        }
+
+        .add-song-form {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .add-song-form input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .add-song-form button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 6px;
+            background-color: #42b72a;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .add-song-form button:hover {
+            background-color: #36a420;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🎵 Metrónomo de Canciones</h1>
+
+        <ul id="song-list"></ul>
+
+        <div class="metronome">
+            <button id="toggle-metronome">Iniciar Metrónomo</button>
+            <div id="bpm-display">-- BPM</div>
+        </div>
+
+        <hr>
+
+        <form id="add-song-form" class="add-song-form">
+            <input type="text" id="song-name-input" placeholder="Nombre de la canción" required>
+            <input type="number" id="song-bpm-input" placeholder="BPM" required min="1">
+            <button type="submit">Agregar</button>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const songList = document.getElementById('song-list');
+            const addSongForm = document.getElementById('add-song-form');
+            const songNameInput = document.getElementById('song-name-input');
+            const songBpmInput = document.getElementById('song-bpm-input');
+            const toggleMetronomeBtn = document.getElementById('toggle-metronome');
+            const bpmDisplay = document.getElementById('bpm-display');
+
+            let songs = JSON.parse(localStorage.getItem('songs')) || [
+                { name: 'Don\'t Stop Me Now', bpm: 156 },
+                { name: 'Billie Jean', bpm: 117 },
+                { name: 'Uptown Funk', bpm: 115 },
+                { name: 'Another One Bites the Dust', bpm: 110 }
+            ];
+
+            let currentBpm = null;
+            let isMetronomePlaying = false;
+            let metronomeInterval = null;
+            let audioContext;
+            let currentBeat = 0;
+
+            const saveSongs = () => {
+                localStorage.setItem('songs', JSON.stringify(songs));
+            };
+
+            const renderSongs = () => {
+                songList.innerHTML = '';
+                songs.forEach((song, index) => {
+                    const li = document.createElement('li');
+                    li.dataset.bpm = song.bpm;
+                    li.innerHTML = `<span class="song-name">${song.name}</span><span class="song-bpm">${song.bpm} BPM</span>`;
+                    li.addEventListener('click', () => {
+                        currentBpm = song.bpm;
+                        bpmDisplay.textContent = `${currentBpm} BPM`;
+                        document.querySelectorAll('#song-list li').forEach(item => item.classList.remove('active'));
+                        li.classList.add('active');
+                    });
+                    songList.appendChild(li);
+                });
+            };
+
+            const addSong = (name, bpm) => {
+                songs.push({ name, bpm });
+                saveSongs();
+                renderSongs();
+            };
+
+            const createAudioContext = () => {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            };
+            
+            const playClick = () => {
+                if (!audioContext) return;
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Beat 1 es más fuerte
+                if (currentBeat % 4 === 0) {
+                    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // Tono más alto para el primer beat
+                    gainNode.gain.setValueAtTime(1, audioContext.currentTime);
+                } else {
+                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // Tono más bajo para los otros beats
+                    gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+                }
+
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.05);
+                
+                currentBeat = (currentBeat + 1) % 4;
+            };
+
+            const toggleMetronome = () => {
+                if (!currentBpm) {
+                    alert('Por favor, selecciona una canción primero.');
+                    return;
+                }
+                
+                createAudioContext();
+
+                isMetronomePlaying = !isMetronomePlaying;
+
+                if (isMetronomePlaying) {
+                    currentBeat = 0; // Resetear el conteo de beats
+                    const interval = (60 / currentBpm) * 1000;
+                    metronomeInterval = setInterval(playClick, interval);
+                    toggleMetronomeBtn.textContent = 'Detener Metrónomo';
+                    playClick(); // Iniciar inmediatamente
+                } else {
+                    clearInterval(metronomeInterval);
+                    toggleMetronomeBtn.textContent = 'Iniciar Metrónomo';
+                }
+            };
+
+            addSongForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const name = songNameInput.value.trim();
+                const bpm = parseInt(songBpmInput.value, 10);
+
+                if (name && bpm > 0) {
+                    addSong(name, bpm);
+                    songNameInput.value = '';
+                    songBpmInput.value = '';
+                } else {
+                    alert('Por favor, ingresa un nombre y un BPM válidos.');
+                }
+            });
+
+            toggleMetronomeBtn.addEventListener('click', toggleMetronome);
+
+            // Carga inicial
+            renderSongs();
+        });
+    </script>
+
+</body>
+</html>
